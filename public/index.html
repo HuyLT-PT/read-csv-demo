@@ -238,6 +238,10 @@
       border-color: #4299e1;
       box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.15);
     }
+    .table-container {
+      overflow: auto;
+      margin-top: 1rem;
+    }
   </style>
 </head>
 <body>
@@ -305,21 +309,22 @@
           </select>
         </div>
 
-        <table border="1" style="margin-top: 1rem;" v-if="paginatedFilteredData.length">
-          <thead>
-            <tr>
-              <th v-for="(header, index) in tableData[0]" :key="index">{{ header }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="(row, rIndex) in paginatedFilteredData" :key="rIndex">
-              <td v-for="(cell, cIndex) in row" :key="cIndex">{{ cell }}</td>
-            </tr>
-          </tbody>
-        </table>
-        
-        <div v-else-if="tableData.length && !isLoading" style="margin-top: 1rem; color: #555;">
-          No matching results found.
+        <div class="table-container">
+          <table border="1" style="margin-top: 1rem;" v-if="paginatedFilteredData.length">
+            <thead>
+              <tr>
+                <th v-for="(header, index) in tableData[0]" :key="index">{{ header }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(row, rIndex) in paginatedFilteredData" :key="rIndex">
+                <td v-for="(cell, cIndex) in row" :key="cIndex">{{ cell }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <div v-else-if="tableData.length && !isLoading" style="margin-top: 1rem; color: #555;">
+            No matching results found.
+          </div>
         </div>
 
         <div class="pagination">
