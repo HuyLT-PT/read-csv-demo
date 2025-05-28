@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Health Check & File Upload</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 2rem;
+    }
+    table {
+      border-collapse: collapse;
+      margin-top: 1rem;
+      width: 100%;
+    }
+    td, th {
+      border: 1px solid #ddd;
+      padding: 8px;
+    }
+    th {
+      background-color: #f2f2f2;
+    }
+    .status {
+      font-size: 1.5rem;
+      padding: 1rem;
+      border-radius: 8px;
+      display: inline-block;
+    }
+    .ok {
+      background-color: #d4edda;
+      color: #155724;
+    }
+    .fail {
+      background-color: #f8d7da;
+      color: #721c24;
+    }
+    .upload {
+      margin-top: 2rem;
+    }
+    input[type="file"] {
+      margin-top: 0.5rem;
+    }
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid #ddd;
+      margin-bottom: 1rem;
+      gap: 0.5rem;
+    }
+    .tab {
+      padding: 0.5rem 1rem;
+      cursor: pointer;
+      border: 1px solid transparent;
+      border-bottom: none;
+      border-radius: 4px 4px 0 0;
+      transition: all 0.2s ease;
+    }
+    .tab.active {
+      background-color: #fff;
+      border-color: #ddd;
+      border-bottom-color: #fff;
+      margin-bottom: -1px;
+      font-weight: 500;
+    }
+    .tab:hover:not(.active) {
+      background-color: #f8f9fa;
+    }
+    .loading {
+      display: inline-block;
+      width: 1rem;
+      height: 1rem;
+      border: 2px solid #f3f3f3;
+      border-top: 2px solid #3498db;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-left: 0.5rem;
+      vertical-align: middle;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .button-loading {
+      position: relative;
+      color: transparent;
+    }
+    .button-loading::after {
+      content: "";
+      position: absolute;
+      width: 1rem;
+      height: 1rem;
+      top: 50%;
+      left: 50%;
+      margin-top: -0.5rem;
+      margin-left: -0.5rem;
+      border: 2px solid #fff;
+      border-top: 2px solid transparent;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    .pagination {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 1rem;
+      gap: 0.5rem;
+    }
+    .pagination button {
+      padding: 0.5rem 1rem;
+      border: 1px solid #ddd;
+      background: white;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    .pagination button:disabled {
+      background: #f5f5f5;
+      cursor: not-allowed;
+    }
+    .pagination button.active {
+      background: #007bff;
+      color: white;
+      border-color: #007bff;
+    }
+    .pagination-info {
+      margin: 0 1rem;
+    }
+    .page-size-selector {
+      margin-left: 0rem;
+    }
+    .search-container {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+    .search-container input {
+      padding: 0.5rem;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      width: 250px;
+      transition: border-color 0.2s ease;
+    }
+    .search-container input:focus {
+      outline: none;
+      border-color: #007bff;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="upload">
+      <h2>Upload CSV / Excel File</h2>
+      <input type="file" @change="handleFileUpload" accept=".csv, .xlsx, .xls" />
+      <div v-if="fileName">📄 Selected file: <strong>{{ fileName }}</strong></div>
+
+      <button 
+        @click="uploadFile" 
+        :disabled="!selectedFile || isLoading" 
+        :class="{ 'button-loading': isLoading }"
+        style="margin-top: 1rem;">
+        {{ isLoading ? 'Processing...' : 'Upload & Show Table' }}
+      </button>
+
+      <div v-if="error" class="fail" style="margin-top: 1rem;">{{ error }}</div>
+
+      <div v-if="sheetNames.length > 0" style="margin-top: 1rem;">
+        <div class="tabs">
+          <div 
+            v-for="sheet in sheetNames" 
+            :key="sheet"
+            class="tab"
+            :class="{ active: selectedSheet === sheet }"
+            @click="selectedSheet = sheet; changeSheet()"
+          >
+            {{ sheet }}
+          </div>
+        </div>
+
+        <div style="margin-top: 1rem;">
+          <div class="search-container">
+            <label>
+              Search: 
+              <input 
+                type="text" 
+                v-model="searchQuery" 
+                @input="onSearchInput" 
+                placeholder="Search table content..."
+              />
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="isLoading" style="margin-top: 1rem;">
+        <span>Loading data...</span>
+        <span class="loading"></span>
+      </div>
+
+      <div v-if="tableData.length && !isLoading">
+        <div class="page-size-selector">
+        <label for="pageSize">Rows per page: </label>
+          <select id="pageSize" v-model="pageSize" @change="resetPagination">
+            <option value="10">10</option>
+            <option value="25">25</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+          </select>
+        </div>
+
+        <table border="1" style="margin-top: 1rem;" v-if="paginatedFilteredData.length">
+          <thead>
+            <tr>
+              <th v-for="(header, index) in tableData[0]" :key="index">{{ header }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(row, rIndex) in paginatedFilteredData" :key="rIndex">
+              <td v-for="(cell, cIndex) in row" :key="cIndex">{{ cell }}</td>
+            </tr>
+          </tbody>
+        </table>
+        
+        <div v-else-if="tableData.length && !isLoading" style="margin-top: 1rem; color: #555;">
+          No matching results found.
+        </div>
+
+        <div class="pagination">
+          <button 
+            @click="currentPage = 1" 
+            :disabled="currentPage === 1">
+            &laquo;
+          </button>
+          <button 
+            @click="currentPage--" 
+            :disabled="currentPage === 1">
+            &lsaquo;
+          </button>
+          
+          <template v-for="page in displayedPages" :key="page">
+            <button 
+              v-if="page !== '...'"
+              @click="currentPage = page"
+              :class="{ active: currentPage === page }">
+              {{ page }}
+            </button>
+            <span v-else>...</span>
+          </template>
+
+          <button 
+            @click="currentPage++" 
+            :disabled="currentPage === totalPages">
+            &rsaquo;
+          </button>
+          <button 
+            @click="currentPage = totalPages" 
+            :disabled="currentPage === totalPages">
+            &raquo;
+          </button>
+
+          <span class="pagination-info">
+            Showing {{ startIndex + 1 }}-{{ endIndex }} of {{ totalRows }} rows
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const { createApp } = Vue;
+
+    createApp({
+      data() {
+        return {
+          fileName: '',
+          selectedFile: null,
+          tableData: [],
+          error: '',
+          sheetNames: [],
+          selectedSheet: '',
+          allSheets: {},
+          isLoading: false,
+          currentPage: 1,
+          pageSize: 10,
+          maxDisplayedPages: 5,
+          searchQuery: '',
+        };
+      },
+      computed: {
+        totalRows() {
+          return Math.max(0, this.tableData.length - 1);
+        },
+        totalPages() {
+          return Math.max(1, Math.ceil(this.totalRows / Number(this.pageSize)));
+        },
+        startIndex() {
+          return Math.min((this.currentPage - 1) * Number(this.pageSize), this.totalRows);
+        },
+        endIndex() {
+          return Math.min(this.startIndex + Number(this.pageSize), this.totalRows);
+        },
+        paginatedData() {
+          if (!this.tableData.length) return [];
+          
+          const start = this.startIndex;
+          const end = this.endIndex;
+          
+          return [
+            ...this.tableData.slice(start + 1, end + 1)
+          ];
+        },
+        filteredDataRows() {
+          if (!this.searchQuery) return this.tableData.slice(1);
+
+          const q = this.searchQuery.trim().toLowerCase();
+
+          return this.tableData.slice(1).filter(row =>
+            row.some(cell => String(cell).toLowerCase().includes(q))
+          );
+        },
+        totalFilteredRows() {
+          return this.filteredDataRows.length;
+        },
+        totalFilteredPages() {
+          return Math.max(1, Math.ceil(this.totalFilteredRows / Number(this.pageSize)));
+        },
+        paginatedFilteredData() {
+          const start = (this.currentPage - 1) * Number(this.pageSize);
+          const end = start + Number(this.pageSize);
+          return this.filteredDataRows.slice(start, end);
+        },
+        displayedPages() {
+          const pages = [];
+          const maxPages = this.maxDisplayedPages;
+          const totalPages = this.totalFilteredPages;
+          const current = this.currentPage;
+          const half = Math.floor(maxPages / 2);
+
+          let start = Math.max(1, current - half);
+          let end = Math.min(totalPages, start + maxPages - 1);
+
+          if (end - start + 1 < maxPages) {
+            start = Math.max(1, end - maxPages + 1);
+          }
+
+          if (start > 1) {
+            pages.push(1);
+            if (start > 2) pages.push('...');
+          }
+
+          for (let i = start; i <= end; i++) {
+            pages.push(i);
+          }
+
+          if (end < totalPages) {
+            if (end < totalPages - 1) pages.push('...');
+            pages.push(totalPages);
+          }
+
+          return pages;
+        },
+      },
+      methods: {
+        handleFileUpload(event) {
+          const file = event.target.files[0];
+          if (!file) {
+            this.resetState();
+            alert("No file selected.");
+            return;
+          }
+
+          const ext = file.name.split('.').pop().toLowerCase();
+          const allowedExt = ['csv', 'xlsx', 'xls'];
+
+          if (!allowedExt.includes(ext)) {
+            this.resetState();
+            alert("Invalid file type! Please upload a CSV or Excel file.");
+            event.target.value = '';
+            return;
+          }
+
+          this.fileName = file.name;
+          this.selectedFile = file;
+          this.error = '';
+          this.tableData = [];
+          this.sheetNames = [];
+          this.selectedSheet = '';
+          this.allSheets = {};
+        },
+        async uploadFile() {
+          if (!this.selectedFile) return;
+
+          const formData = new FormData();
+          formData.append('file', this.selectedFile);
+
+          try {
+            this.error = '';
+            this.tableData = [];
+            this.isLoading = true;
+            this.resetPagination();
+
+            const res = await fetch('/upload', {
+              method: 'POST',
+              body: formData
+            });
+
+            if (!res.ok) {
+              throw new Error(`Upload failed: ${res.statusText}`);
+            }
+
+            const result = await res.json();
+            if (result.error) {
+              throw new Error(result.error);
+            }
+            
+            this.allSheets = result.sheets;
+            this.sheetNames = result.sheetNames;
+            if (this.sheetNames.length > 0) {
+              this.selectedSheet = this.sheetNames[0];
+              this.tableData = this.allSheets[this.selectedSheet];
+            }
+          } catch (err) {
+            this.error = err.message;
+          } finally {
+            this.isLoading = false;
+          }
+        },
+        changeSheet() {
+          if (this.selectedSheet) {
+            this.tableData = this.allSheets[this.selectedSheet];
+            this.resetPagination();
+          }
+        },
+        resetPagination() {
+          this.currentPage = 1;
+        },
+        resetState() {
+          this.fileName = '';
+          this.selectedFile = null;
+          this.sheetNames = [];
+          this.selectedSheet = '';
+          this.allSheets = {};
+          this.tableData = [];
+          this.error = '';
+          this.resetPagination();
+        },
+        onSearchInput() {
+          this.currentPage = 1;
+        },
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>
